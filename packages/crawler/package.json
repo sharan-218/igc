@@ -1,0 +1,18 @@
+{
+  "name": "crawler",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "cheerio": "^1.0.0",
+    "jsdom": "^28.1.0",
+    "undici": "^7.10.0"
+  }
+}

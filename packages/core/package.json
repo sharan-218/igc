@@ -1,0 +1,19 @@
+{
+  "name": "@core",
+  "module": "index.ts",
+  "type": "module",
+  "main": "src/index.ts",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "bloom-filters": "^3.0.4",
+    "bullmq": "^5.70.1",
+    "ioredis": "^5.9.3",
+    "zod": "^4.3.6"
+  }
+}

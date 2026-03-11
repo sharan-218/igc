@@ -1,0 +1,42 @@
+{
+  "name": "web-intelligence-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "dev:crawler": "bun --watch run apps/crawler-worker/src/worker.ts",
+    "dev:extractor": "bun --watch run apps/extractor-worker/index.ts",
+    "dev:scheduler": "bun --watch run apps/scheduler/index.ts",
+    "start:crawler": "bun run apps/crawler-worker/src/worker.ts",
+    "start:extractor": "bun run apps/extractor-worker/index.ts",
+    "start:scheduler": "bun run apps/scheduler/index.ts",
+    "seed": "bun run scripts/seed-job.ts",
+    "migrate": "bun run scripts/migrate.ts",
+    "evaluate": "bun run scripts/evaluate.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsx": "^4.21.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "bloom-filters": "^3.0.4",
+    "bullmq": "^5.70.1",
+    "chalk": "^5.6.2",
+    "cheerio": "^1.0.0",
+    "dotenv": "^17.3.1",
+    "ioredis": "^5.9.3",
+    "jsdom": "^28.1.0",
+    "playwright": "^1.44.0",
+    "postgres": "^3.4.8",
+    "undici": "^7.10.0",
+    "zod": "^4.3.6"
+  }
+}
