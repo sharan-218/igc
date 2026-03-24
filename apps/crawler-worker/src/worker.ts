@@ -52,7 +52,11 @@ const SEED_FROM_SITEMAP = process.env.SEED_FROM_SITEMAP !== "false";
 const QUEUE_NAME = "crawl-queue";
 
 console.log(chalk.cyan(" Starting crawler worker v2 "));
-console.log(chalk.dim(` Concurrency: ${CONCURRENCY} | JS rendering: ${JS_RENDER_ENABLED} | Sitemap: ${SEED_FROM_SITEMAP}`));
+console.log(
+  chalk.dim(
+    ` Concurrency: ${CONCURRENCY} | JS rendering: ${JS_RENDER_ENABLED} | Sitemap: ${SEED_FROM_SITEMAP} | Proxy mode: ${proxyPool.isProxyEnabled() ? "pool" : "direct"}`
+  )
+);
 
 const workerConnection = createRedisConnection();
 
@@ -112,6 +116,7 @@ const worker = new Worker(
       // ── HTTP fetch ────────────────────────────────────────────────────────
       console.log(`${jid} ${chalk.bgGray.white(" Fetching... ")} ${chalk.blue(url)}`);
       let result = await fetchPage(url);
+      let renderedWith: "http" | "playwright" = "http";
 
       if (result.networkError) throw new Error(result.errorMessage);
 
@@ -120,7 +125,8 @@ const worker = new Worker(
         console.log(`${jid} ${chalk.bgMagenta.white(" JS render ")} ${chalk.dim(url)}`);
         const jsResult = await browserPool.renderPage(url);
         if (!jsResult.networkError && jsResult.html) {
-          result = { ...jsResult, proxyUsed: result.proxyUsed };
+          result = jsResult;
+          renderedWith = "playwright";
         }
       }
 
@@ -201,7 +207,7 @@ const worker = new Worker(
           ${publishedAt ? new Date(publishedAt) : null},
           ${modifiedAt ? new Date(modifiedAt) : null},
           ${ogImage ?? null},
-          ${"http"},
+          ${renderedWith},
           ${result.proxyUsed ?? null}
         )
         RETURNING id

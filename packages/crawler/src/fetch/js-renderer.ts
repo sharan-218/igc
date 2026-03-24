@@ -23,6 +23,7 @@
 
 import type { FetchResult } from "./fetch-page";
 import { proxyPool } from "./proxy-pool";
+import type { ProxyEntry } from "./proxy-pool";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const PAGE_TIMEOUT_MS = 30_000;
@@ -43,6 +44,7 @@ interface BrowserSlot {
   browser: import("playwright").Browser | null;
   inUse: boolean;
   crashCount: number;
+  proxy: ProxyEntry | null;
 }
 
 // ── Browser Pool ──────────────────────────────────────────────────────────────
@@ -67,6 +69,7 @@ class BrowserPool {
         browser: null,
         inUse: false,
         crashCount: 0,
+        proxy: null,
       }));
 
       await Promise.all(this.slots.map(slot => this.spawnBrowser(slot)));
@@ -79,8 +82,10 @@ class BrowserPool {
   private async spawnBrowser(slot: BrowserSlot): Promise<void> {
     if (!this.pw) return;
     try {
+      slot.proxy = proxyPool.nextProxy();
       slot.browser = await this.pw.chromium.launch({
         headless: true,
+        ...(slot.proxy ? { proxy: proxyPool.getPlaywrightProxy(slot.proxy) } : {}),
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -129,8 +134,8 @@ class BrowserPool {
       const headers = proxyPool.nextHeaders();
 
       context = await slot.browser!.newContext({
-        userAgent: headers["User-Agent"],
-        extraHTTPHeaders: { "Accept-Language": headers["Accept-Language"] },
+        userAgent: headers["User-Agent"] ?? "Mozilla/5.0",
+        extraHTTPHeaders: { "Accept-Language": headers["Accept-Language"] ?? "en-US,en;q=0.9" },
       });
 
       page = await context.newPage();
@@ -178,16 +183,19 @@ class BrowserPool {
         return { url, statusCode, html: null, networkError: false, errorMessage: "BODY_TOO_LARGE" };
       }
 
+      if (slot.proxy) proxyPool.markSuccess(slot.proxy);
       slot.crashCount = 0;
-      return { url, statusCode, html, networkError: false };
+      return { url, statusCode, html, networkError: false, proxyUsed: slot.proxy?.url };
 
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
 
+      if (slot.proxy) proxyPool.markFailure(slot.proxy);
       slot.crashCount++;
       if (slot.crashCount >= 3) {
         try { await slot.browser?.close(); } catch {}
         slot.browser = null;
+        slot.proxy = null;
         slot.crashCount = 0;
         this.spawnBrowser(slot).catch(() => {});
       }
@@ -207,6 +215,7 @@ class BrowserPool {
         s.inUse = false;
         try { await s.browser?.close(); } catch {}
         s.browser = null;
+        s.proxy = null;
       })
     );
   }

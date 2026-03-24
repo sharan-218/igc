@@ -70,17 +70,25 @@ function globToRegex(pattern: string): RegExp {
 async function fetchText(url: string): Promise<string | null> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const proxy = proxyPool.nextProxy();
   try {
     const res = await fetch(url, {
       headers: proxyPool.nextHeaders(),
       signal: controller.signal,
       redirect: "follow",
+      ...(proxy ? { dispatcher: proxyPool.getAgent(proxy) } : {}),
     });
-    if (!res.ok) { await res.body?.cancel(); return null; }
+    if (!res.ok) {
+      await res.body?.cancel();
+      if (proxy) proxyPool.markFailure(proxy);
+      return null;
+    }
     const buf = await res.arrayBuffer();
+    if (proxy) proxyPool.markSuccess(proxy);
     if (buf.byteLength > 2 * 1024 * 1024) return null; // 2 MB cap
     return new TextDecoder("utf-8", { fatal: false }).decode(buf);
   } catch {
+    if (proxy) proxyPool.markFailure(proxy);
     return null;
   } finally {
     clearTimeout(t);
@@ -116,7 +124,7 @@ export class RobotsManager {
       if (!line || line.startsWith("#")) continue;
 
       const [directive, ...rest] = line.split(":");
-      const key = directive.trim().toLowerCase();
+      const key = (directive ?? "").trim().toLowerCase();
       const value = rest.join(":").trim();
 
       if (key === "user-agent") {
@@ -190,14 +198,16 @@ export async function* fetchSitemapUrls(
   // Detect sitemap index
   if (text.includes("<sitemapindex")) {
     const subSitemaps = [...text.matchAll(/<loc>\s*(https?:\/\/[^<]+)\s*<\/loc>/gi)]
-      .map(m => m[1].trim());
+      .map(m => m[1]?.trim())
+      .filter((value): value is string => Boolean(value));
     for (const sub of subSitemaps) {
       yield* fetchSitemapUrls(sub, depth + 1);
     }
   } else {
     // Regular sitemap — stream loc tags
     const urls = [...text.matchAll(/<loc>\s*(https?:\/\/[^<]+)\s*<\/loc>/gi)]
-      .map(m => m[1].trim());
+      .map(m => m[1]?.trim())
+      .filter((value): value is string => Boolean(value));
     for (const u of urls) yield u;
   }
 }

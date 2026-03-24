@@ -2,13 +2,13 @@
  * ProxyPool — thread-safe, weighted round-robin proxy + user-agent rotation.
  *
  * Design goals:
- * - Zero external deps (uses native URL + undici Agent)
+ * - Uses undici ProxyAgent for actual proxy dispatching
  * - Memory-bounded: fixed-size arrays, no unbounded growth
  * - Self-healing: marks proxies unhealthy on repeated failures, auto-recovers after TTL
  * - Metrics per proxy for observability
  */
 
-import { Agent } from "undici";
+import { ProxyAgent } from "undici";
 
 export interface ProxyEntry {
   url: string;           // e.g. "http://user:pass@1.2.3.4:8080"
@@ -16,8 +16,10 @@ export interface ProxyEntry {
   healthy: boolean;
   failures: number;
   lastFailAt: number;    // epoch ms
-  agent: Agent | null;   // lazily created undici Agent
+  agent: ProxyAgent | null;   // lazily created undici ProxyAgent
 }
+
+export type ProxyMode = "pool" | "direct";
 
 // ── User-Agent bank ──────────────────────────────────────────────────────────
 const USER_AGENTS: readonly string[] = [
@@ -49,11 +51,12 @@ const RECOVERY_TTL_MS = 5 * 60 * 1_000; // 5 minutes
 // ── Pool class ───────────────────────────────────────────────────────────────
 export class ProxyPool {
   private readonly proxies: ProxyEntry[];
+  private readonly mode: ProxyMode;
   private uaIndex = 0;
   private laIndex = 0;
   private proxyIndex = 0;
 
-  constructor(proxyUrls: string[] = []) {
+  constructor(proxyUrls: string[] = [], mode: ProxyMode = "direct") {
     this.proxies = proxyUrls.map((url, i) => ({
       url,
       weight: 1,
@@ -62,17 +65,22 @@ export class ProxyPool {
       lastFailAt: 0,
       agent: null,
     }));
+    this.mode = mode;
+  }
+
+  isProxyEnabled(): boolean {
+    return this.mode === "pool" && this.proxies.length > 0;
   }
 
   // ── User-Agent rotation (round-robin with jitter) ─────────────────────────
   nextUserAgent(): string {
-    const ua = USER_AGENTS[this.uaIndex % USER_AGENTS.length];
+    const ua = USER_AGENTS[this.uaIndex % USER_AGENTS.length] ?? USER_AGENTS[0];
     this.uaIndex = (this.uaIndex + 1) % USER_AGENTS.length;
     return ua;
   }
 
   nextAcceptLanguage(): string {
-    const la = ACCEPT_LANGUAGES[this.laIndex % ACCEPT_LANGUAGES.length];
+    const la = ACCEPT_LANGUAGES[this.laIndex % ACCEPT_LANGUAGES.length] ?? ACCEPT_LANGUAGES[0];
     this.laIndex = (this.laIndex + 1) % ACCEPT_LANGUAGES.length;
     return la;
   }
@@ -96,7 +104,7 @@ export class ProxyPool {
   // ── Proxy rotation ────────────────────────────────────────────────────────
   /** Returns null when no proxies configured (direct connection mode). */
   nextProxy(): ProxyEntry | null {
-    if (this.proxies.length === 0) return null;
+    if (!this.isProxyEnabled()) return null;
 
     // Auto-recover proxies past TTL
     const now = Date.now();
@@ -111,26 +119,32 @@ export class ProxyPool {
     if (healthy.length === 0) {
       // All proxies down — reset all and return first (best-effort)
       for (const p of this.proxies) { p.healthy = true; p.failures = 0; }
-      return this.proxies[0];
+      return this.proxies[0] ?? null;
     }
 
-    const proxy = healthy[this.proxyIndex % healthy.length];
+    const proxy = healthy[this.proxyIndex % healthy.length] ?? null;
     this.proxyIndex = (this.proxyIndex + 1) % healthy.length;
     return proxy;
   }
 
-  getAgent(proxy: ProxyEntry): Agent {
+  getAgent(proxy: ProxyEntry): ProxyAgent {
     if (!proxy.agent) {
-      proxy.agent = new Agent({
-        pipelining: 1,
-        maxRedirections: 5,
-        headersTimeout: 15_000,
-        bodyTimeout: 20_000,
-        connectTimeout: 10_000,
-        // undici proxy support via connect factory
-      });
+      proxy.agent = new ProxyAgent(proxy.url);
     }
     return proxy.agent;
+  }
+
+  getPlaywrightProxy(proxy: ProxyEntry): {
+    server: string;
+    username?: string;
+    password?: string;
+  } {
+    const url = new URL(proxy.url);
+    return {
+      server: `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}`,
+      ...(url.username ? { username: decodeURIComponent(url.username) } : {}),
+      ...(url.password ? { password: decodeURIComponent(url.password) } : {}),
+    };
   }
 
   markFailure(proxy: ProxyEntry): void {
@@ -162,7 +176,7 @@ export class ProxyPool {
     await Promise.allSettled(
       this.proxies
         .filter(p => p.agent)
-        .map(p => p.agent!.destroy())
+        .map(p => p.agent!.close())
     );
     for (const p of this.proxies) p.agent = null;
   }
@@ -174,4 +188,8 @@ const proxyUrls = (process.env.PROXY_URLS ?? "")
   .map(s => s.trim())
   .filter(Boolean);
 
-export const proxyPool = new ProxyPool(proxyUrls);
+const proxyMode = (process.env.PROXY_MODE ?? "direct").trim().toLowerCase() === "pool"
+  ? "pool"
+  : "direct";
+
+export const proxyPool = new ProxyPool(proxyUrls, proxyMode);

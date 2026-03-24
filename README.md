@@ -672,7 +672,7 @@ The `BrowserPool` supports auto-recovery: if a browser slot crashes 3 times cons
 
 ### 11.5 Proxy and User-Agent Rotation
 
-`ProxyPool` rotates through a comma-separated list of proxy URLs (`PROXY_URLS` env) using weighted round-robin. In direct-connection mode (no proxies configured), it still rotates through 7 real-browser User-Agent strings and 4 Accept-Language variants to avoid trivial bot detection.
+`ProxyPool` rotates through a comma-separated list of proxy URLs (`PROXY_URLS` env) using weighted round-robin when `PROXY_MODE=pool`. When `PROXY_MODE=direct`, the crawler bypasses proxies entirely while still rotating through 7 real-browser User-Agent strings and 4 Accept-Language variants to avoid trivial bot detection.
 
 ---
 
@@ -731,6 +731,7 @@ All configuration is provided via environment variables. See `.env.example` for 
 | `JS_BROWSER_POOL_SIZE` | `2` | Chromium instances in pool |
 | `SEED_FROM_SITEMAP` | `true` | Auto-seed URLs from sitemap.xml |
 | `QUALITY_THRESHOLD` | `25` | Minimum quality score to emit chunks |
+| `PROXY_MODE` | `direct` | `direct` bypasses proxies, `pool` enables `PROXY_URLS` |
 | `PROXY_URLS` | `""` | Comma-separated proxy URLs |
 | `EMBEDDING_PROVIDER` | `openai` | `openai` \| `cohere` \| `local` |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Model name passed to the embedding API |

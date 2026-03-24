@@ -44,7 +44,7 @@ export async function fetchPage(url: string): Promise<FetchResult> {
       headers,
       signal: controller.signal,
       redirect: "follow",
-      // Use proxy agent when available, otherwise fall back to default
+      // Use proxy agent when proxy mode is enabled, otherwise connect directly.
       ...(proxy ? { dispatcher: proxyPool.getAgent(proxy) } : {}),
     };
 
