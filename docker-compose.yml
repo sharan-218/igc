@@ -1,0 +1,104 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: wip-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: web_intelligence
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d web_intelligence"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: wip-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: oven/bun:1.2
+    container_name: wip-migrate
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/web_intelligence
+    volumes:
+      - ./:/app
+    command: ["bun", "run", "scripts/migrate.ts"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  crawler-worker:
+    build:
+      context: .
+      dockerfile: apps/crawler-worker/Dockerfile
+    container_name: wip-crawler-worker
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/web_intelligence
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  extractor-worker:
+    build:
+      context: .
+      dockerfile: apps/extractor-worker/Dockerfile
+    container_name: wip-extractor-worker
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/web_intelligence
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: apps/scheduler/Dockerfile
+    container_name: wip-scheduler
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/web_intelligence
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+volumes:
+  postgres_data:

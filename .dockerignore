@@ -1,0 +1,15 @@
+node_modules
+.git
+.gitignore
+Dockerfile
+**/node_modules
+**/.DS_Store
+**/*.log
+.env
+.env.*
+!.env.example
+bun.lockb
+dist
+coverage
+.vscode
+.idea
